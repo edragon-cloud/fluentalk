@@ -551,10 +551,15 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 </div><!-- .app -->
 
 <script>
-var GAS_URL = 'https://script.google.com/macros/s/AKfycbwWig5KhdjYSyMf5mvxNYFcocx8FhFxwMngvM1r4fTRExzkad_5mGWdtF1kseyzm4gy/exec';
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbwvfSsGEq-Yw1sPqFIDi45uKkk46DN9Ma4O6xN5B2Sjr5iuMDnwYsoui727d-eyI3NP/exec';
 
 // ========== GAS JSONP CALLER ==========
 function gasCall(funcName, params, onSuccess, onFailure) {
+  // saveToSheet dùng POST vì data lớn có thể vượt giới hạn URL
+  if (funcName === 'saveToSheet') {
+    gasCallPost(funcName, params, onSuccess, onFailure);
+    return;
+  }
   var url = GAS_URL + '?func=' + encodeURIComponent(funcName);
   if (params !== undefined && params !== null) url += '&params=' + encodeURIComponent(JSON.stringify(params));
   var cb = 'gasCallback_' + Date.now() + '_' + Math.floor(Math.random() * 9999);
@@ -565,6 +570,55 @@ function gasCall(funcName, params, onSuccess, onFailure) {
   window[cb] = function(result) { cleanup(); if (result && result.__error) { if (onFailure) onFailure({ message: result.__error }); } else { if (onSuccess) onSuccess(result); } };
   function cleanup() { clearTimeout(timer); delete window[cb]; if (script.parentNode) script.parentNode.removeChild(script); }
   script.onerror = function() { cleanup(); if (onFailure) onFailure({ message: 'Network error. Check GAS_URL.' }); };
+  document.head.appendChild(script);
+}
+
+// POST method cho data lớn (saveToSheet)
+function gasCallPost(funcName, params, onSuccess, onFailure) {
+  var url = GAS_URL;
+  var body = 'func=' + encodeURIComponent(funcName);
+  if (params !== undefined && params !== null) body += '&params=' + encodeURIComponent(JSON.stringify(params));
+  var cb = 'gasCallback_' + Date.now() + '_' + Math.floor(Math.random() * 9999);
+  body += '&callback=' + cb;
+  var timer = setTimeout(function() { if (onFailure) onFailure({ message: 'Save timeout.' }); }, 30000);
+  // GAS không hỗ trợ POST từ browser do CORS, dùng JSONP với GET nhưng chunk nhỏ hơn
+  // Gửi summary thay vì full results để tránh URL quá dài
+  var summary = {
+    studentName: params[0].studentName,
+    accessCode: params[0].accessCode,
+    mode: params[0].mode,
+    simMode: params[0].simMode,
+    startingTime: params[0].startingTime,
+    submittingTime: params[0].submittingTime,
+    duration: params[0].duration,
+    results: (params[0].results || []).map(function(r) {
+      return {
+        question: r.question,
+        studentAnswer: r.studentAnswer,
+        corrected: (r.corrected || '').replace(/<[^>]*>/g, '').substring(0, 500),
+        scores: r.scores,
+        overall: r.overall,
+        summary: (r.summary || '').substring(0, 300),
+        usedHint: r.usedHint
+      };
+    })
+  };
+  var cleanUrl = GAS_URL + '?func=' + encodeURIComponent(funcName) + '&params=' + encodeURIComponent(JSON.stringify([summary])) + '&callback=' + cb;
+  var script = document.createElement('script');
+  script.src = cleanUrl;
+  window[cb] = function(result) {
+    clearTimeout(timer);
+    delete window[cb];
+    if (script.parentNode) script.parentNode.removeChild(script);
+    if (result && result.__error) { if (onFailure) onFailure({ message: result.__error }); }
+    else { if (onSuccess) onSuccess(result); }
+  };
+  script.onerror = function() {
+    clearTimeout(timer);
+    delete window[cb];
+    if (script.parentNode) script.parentNode.removeChild(script);
+    if (onFailure) onFailure({ message: 'Save failed - network error.' });
+  };
   document.head.appendChild(script);
 }
 
@@ -874,9 +928,26 @@ function initSpeech(){
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){showToast('Speech recognition requires Chrome browser.','error');return null;}
   var rec=new SR();rec.continuous=true;rec.interimResults=true;rec.lang='en-US';
-  rec.onresult=function(e){var interim='',final='';for(var i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)final+=e.results[i][0].transcript+' ';else interim+=e.results[i][0].transcript;}if(final)state.transcript+=final;var box=document.getElementById('transcriptBox');box.textContent=state.transcript+interim;box.style.fontStyle='normal';};
+  rec.onresult=function(e){
+    // Chỉ xử lý từ resultIndex trở đi để tránh đọc lại kết quả cũ
+    var interim='';
+    for(var i=e.resultIndex;i<e.results.length;i++){
+      if(e.results[i].isFinal){
+        state.transcript+=e.results[i][0].transcript+' ';
+      } else {
+        interim+=e.results[i][0].transcript;
+      }
+    }
+    var box=document.getElementById('transcriptBox');
+    box.textContent=state.transcript+interim;
+    box.style.fontStyle='normal';
+  };
   rec.onerror=function(e){if(e.error==='not-allowed'||e.error==='permission-denied'){document.getElementById('micNotice').classList.add('show');showToast('⚠️ Please allow microphone access','error');stopRecording();}};
-  rec.onend=function(){if(state.isRecording){try{rec.start();}catch(x){}}};
+  rec.onend=function(){
+    if(state.isRecording){
+      try{ rec.start(); }catch(x){}
+    }
+  };
   return rec;
 }
 function toggleRecording(){if(state.isRecording)stopRecording();else startRecording();}
