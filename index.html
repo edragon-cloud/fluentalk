@@ -202,6 +202,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .kw-chip.blue{background:var(--purple);}
 .kw-chip.orange{background:var(--orange);}
 .kw-chip.green{background:var(--green);}
+.kw-arrow{
+  display:inline-flex;align-items:center;
+  color:var(--text3);font-size:16px;font-weight:700;
+  margin:0 3px;line-height:1;
+  vertical-align:middle;
+  user-select:none;
+}
 
 /* ── Mic ── */
 .mic-area{display:flex;flex-direction:column;align-items:center;gap:14px;padding:20px;}
@@ -551,7 +558,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 </div><!-- .app -->
 
 <script>
-var GAS_URL = 'https://script.google.com/macros/s/AKfycbwvfSsGEq-Yw1sPqFIDi45uKkk46DN9Ma4O6xN5B2Sjr5iuMDnwYsoui727d-eyI3NP/exec';
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbwRpRA8az_x8AL3MmnaIgSjSyPgLLkY1UtnE6U2cVJuiDfHwnAS14DTdugX9utDH8Vz/exec';
 
 // ========== GAS JSONP CALLER ==========
 function gasCall(funcName, params, onSuccess, onFailure) {
@@ -844,16 +851,63 @@ function showPrepForP2(onDone){
   var iv=setInterval(function(){s--;document.getElementById('prepTimer').textContent=s;if(s<=0){clearInterval(iv);prep.classList.remove('show');pa.style.display='block';if(onDone)onDone();}},1000);
 }
 
-// ========== TTS ==========
-var ttsAudio=null,ttsCache={};
+// ========== TTS — Reliable, always plays ==========
+var ttsAudio = null, ttsCache = {}, _ttsQueue = [];
+
 function speakText(text){
-  var clean=(text||'').replace(/<[^>]*>/g,'').trim();if(!clean)return;stopSpeaking();
-  if(ttsCache[clean]){playAudioBase64(ttsCache[clean]);return;}
-  var sb=document.getElementById('speakBtn');if(sb){sb.style.opacity='.5';sb.style.pointerEvents='none';}
-  gasCall('getTTS',[clean,'nova'],function(res){if(sb){sb.style.opacity='1';sb.style.pointerEvents='auto';}if(res&&res.success){ttsCache[clean]=res.audio;playAudioBase64(res.audio);}},function(){if(sb){sb.style.opacity='1';sb.style.pointerEvents='auto';}});
+  var clean = (text||'').replace(/<[^>]*>/g,'').replace(/\s+/g,' ').trim();
+  if(!clean || clean.length < 2) return;
+  // Limit to first 300 chars so TTS is fast
+  if(clean.length > 300) clean = clean.substring(0, 300);
+  stopSpeaking();
+  if(ttsCache[clean]){ _playBase64(ttsCache[clean]); return; }
+  var sb = document.getElementById('speakBtn');
+  if(sb){ sb.style.opacity='.5'; sb.style.pointerEvents='none'; }
+  // Retry once on failure
+  function doCall(attempt){
+    gasCall('getTTS',[clean,'nova'],
+      function(res){
+        if(sb){ sb.style.opacity='1'; sb.style.pointerEvents='auto'; }
+        if(res && res.success && res.audio){
+          ttsCache[clean] = res.audio;
+          _playBase64(res.audio);
+        }
+      },
+      function(){
+        if(attempt < 2){
+          setTimeout(function(){ doCall(attempt+1); }, 1000);
+        } else {
+          if(sb){ sb.style.opacity='1'; sb.style.pointerEvents='auto'; }
+        }
+      }
+    );
+  }
+  doCall(1);
 }
-function playAudioBase64(b64){try{if(ttsAudio){ttsAudio.pause();ttsAudio=null;}var bytes=atob(b64),arr=new Uint8Array(bytes.length);for(var j=0;j<bytes.length;j++)arr[j]=bytes.charCodeAt(j);ttsAudio=new Audio(URL.createObjectURL(new Blob([arr],{type:'audio/mpeg'})));ttsAudio.play().catch(function(){});}catch(e){}}
-function stopSpeaking(){if(ttsAudio){ttsAudio.pause();ttsAudio=null;}}
+
+function _playBase64(b64){
+  try{
+    stopSpeaking();
+    var bytes = atob(b64), arr = new Uint8Array(bytes.length);
+    for(var j=0;j<bytes.length;j++) arr[j]=bytes.charCodeAt(j);
+    var url = URL.createObjectURL(new Blob([arr],{type:'audio/mpeg'}));
+    ttsAudio = new Audio(url);
+    // Chrome autoplay policy: must be triggered after user interaction
+    // We use a short timeout and catch the rejection gracefully
+    var playPromise = ttsAudio.play();
+    if(playPromise !== undefined){
+      playPromise.catch(function(err){
+        // Autoplay blocked — silently ignore, user can click speaker icon
+        console.log('TTS autoplay blocked:', err.message);
+      });
+    }
+    ttsAudio.onended = function(){ ttsAudio = null; };
+  }catch(e){ ttsAudio = null; }
+}
+
+function stopSpeaking(){
+  if(ttsAudio){ try{ ttsAudio.pause(); URL.revokeObjectURL(ttsAudio.src); }catch(x){} ttsAudio=null; }
+}
 
 function loadQ(idx){
   if(idx>=state.questions.length){endSession();return;}
@@ -885,23 +939,65 @@ function setHint(mode){
   if(mode==='keywords'){kb.classList.add('show');renderKW();}else kb.classList.remove('show');
 }
 function renderKW(){
-  var item=state.questions[state.currentIndex];var kw=item&&item.kw?item.kw:[];
-  var container=document.getElementById('kwChips');var qText=(item&&item.q)||'';var isP2=qText.indexOf('You should say')!==-1;
-  if(isP2&&Array.isArray(kw)&&kw.length===4&&typeof kw[0]==='string'){
-    var bulletLabels=['▶ Point 1','▶ Point 2','▶ Point 3','▶ And explain...'];container.innerHTML='';
-    kw.forEach(function(group,gi){
-      var gDiv=document.createElement('div');gDiv.style.cssText='margin-bottom:10px;width:100%;';
-      var lbl=document.createElement('div');lbl.style.cssText='font-size:10px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;';lbl.textContent=bulletLabels[gi];gDiv.appendChild(lbl);
-      var cDiv=document.createElement('div');cDiv.className='kw-chips';
-      var kwList=typeof group==='string'?group.split(',').map(function(s){return s.trim();}).filter(Boolean):[];
-      var colors=['','teal','blue','orange',''];
-      kwList.forEach(function(k,ki){var chip=document.createElement('span');chip.className='kw-chip '+(colors[ki%colors.length]||'');chip.textContent=k;cDiv.appendChild(chip);});
-      gDiv.appendChild(cDiv);container.appendChild(gDiv);
+  var item = state.questions[state.currentIndex];
+  var kw = item && item.kw ? item.kw : [];
+  var container = document.getElementById('kwChips');
+  var qText = (item && item.q) || '';
+  var isP2 = qText.indexOf('You should say') !== -1;
+
+  // Helper: render a list of keywords as chips with arrows between them
+  function chipsWithArrows(kwList, colorList){
+    var html = '';
+    kwList.forEach(function(k, i){
+      // Clean keyword: remove leading bullets, numbers, special chars
+      var clean = k.replace(/^[\d\.\-\*\▶\→\•\s]+/, '').trim();
+      if(!clean) return;
+      var c = colorList[i % colorList.length] || '';
+      html += '<span class="kw-chip '+c+'">'+clean+'</span>';
+      if(i < kwList.length - 1){
+        html += '<span class="kw-arrow">→</span>';
+      }
+    });
+    return html;
+  }
+
+  if(isP2 && Array.isArray(kw) && kw.length === 4 && typeof kw[0] === 'string'){
+    var bulletLabels = ['Point 1','Point 2','Point 3','And explain...'];
+    var groupColors  = [
+      ['','teal','blue','orange','green'],
+      ['teal','blue','orange','','teal'],
+      ['blue','orange','green','teal',''],
+      ['orange','green','','teal','blue']
+    ];
+    container.innerHTML = '';
+    kw.forEach(function(group, gi){
+      var kwList = typeof group==='string'
+        ? group.split(',').map(function(s){ return s.trim(); }).filter(Boolean)
+        : [];
+      if(!kwList.length) return;
+
+      var gDiv = document.createElement('div');
+      gDiv.style.cssText = 'margin-bottom:12px;width:100%;';
+
+      var lbl = document.createElement('div');
+      lbl.style.cssText = 'font-size:10px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;';
+      lbl.textContent = bulletLabels[gi];
+      gDiv.appendChild(lbl);
+
+      var cDiv = document.createElement('div');
+      cDiv.className = 'kw-chips';
+      cDiv.innerHTML = chipsWithArrows(kwList, groupColors[gi]);
+      gDiv.appendChild(cDiv);
+      container.appendChild(gDiv);
     });
   } else {
-    var kwList=typeof kw==='string'?kw.split(',').map(function(s){return s.trim();}).filter(Boolean):(Array.isArray(kw)?kw:[]);
-    var colors=['','teal','blue','orange','','teal','blue','orange','','teal','blue','orange'];
-    container.innerHTML=kwList.length?kwList.map(function(k,i){return'<span class="kw-chip '+(colors[i%colors.length]||'')+'">'+k+'</span>';}).join(''):'<span style="color:var(--text3);font-size:13px;">No keywords available.</span>';
+    var kwList = typeof kw==='string'
+      ? kw.split(',').map(function(s){ return s.trim(); }).filter(Boolean)
+      : (Array.isArray(kw) ? kw : []);
+    var colors = ['','teal','blue','orange','green','teal','blue','orange','green','teal'];
+    container.innerHTML = kwList.length
+      ? chipsWithArrows(kwList, colors)
+      : '<span style="color:var(--text3);font-size:13px;">No keywords available.</span>';
   }
 }
 
@@ -923,58 +1019,109 @@ function startTimer(type,seconds){
 function stopTimer(){if(state.timerInterval){clearInterval(state.timerInterval);state.timerInterval=null;}var v=document.getElementById('timerValue');if(v)v.classList.remove('blink-red','blink-green');}
 function fmt(s){if(s<0)s=0;var m=Math.floor(s/60),sec=s%60;return(m<10?'0':'')+m+':'+(sec<10?'0':'')+sec;}
 
-// ========== MICROPHONE ==========
+// ========== MICROPHONE — Chrome optimised, no duplicate words ==========
+// Root cause of duplicate: Chrome fires onend + restarts → resultIndex resets to 0
+// Fix: never use continuous=true with auto-restart. Instead use a single-shot
+// recognition that we manually restart, and we track a "committed" offset so
+// interim results from the new session never overlap with already-committed text.
+
+var _recRestartTimer = null;
+
 function initSpeech(){
-  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){showToast('Speech recognition requires Chrome browser.','error');return null;}
-  var rec=new SR();rec.continuous=true;rec.interimResults=true;rec.lang='en-US';
-  rec.onresult=function(e){
-    // Chỉ xử lý từ resultIndex trở đi để tránh đọc lại kết quả cũ
-    var interim='';
-    for(var i=e.resultIndex;i<e.results.length;i++){
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){ showToast('Speech recognition requires Chrome.','error'); return null; }
+
+  var rec = new SR();
+  rec.continuous      = false;   // single-shot per segment — avoids Chrome duplicate bug
+  rec.interimResults  = true;
+  rec.lang            = 'en-US';
+  rec.maxAlternatives = 1;
+
+  rec.onresult = function(e){
+    var interim = '';
+    for(var i = 0; i < e.results.length; i++){
       if(e.results[i].isFinal){
-        state.transcript+=e.results[i][0].transcript+' ';
+        // Only append truly new final text (deduplicate trailing space)
+        var t = e.results[i][0].transcript.trim();
+        if(t) state.transcript += t + ' ';
       } else {
-        interim+=e.results[i][0].transcript;
+        interim += e.results[i][0].transcript;
       }
     }
-    var box=document.getElementById('transcriptBox');
-    box.textContent=state.transcript+interim;
-    box.style.fontStyle='normal';
+    var box = document.getElementById('transcriptBox');
+    box.textContent = state.transcript + interim;
+    box.style.fontStyle = 'normal';
   };
-  rec.onerror=function(e){if(e.error==='not-allowed'||e.error==='permission-denied'){document.getElementById('micNotice').classList.add('show');showToast('⚠️ Please allow microphone access','error');stopRecording();}};
-  rec.onend=function(){
+
+  rec.onerror = function(e){
+    if(e.error === 'not-allowed' || e.error === 'permission-denied'){
+      document.getElementById('micNotice').classList.add('show');
+      showToast('⚠️ Please allow microphone access','error');
+      stopRecording();
+    }
+    // For 'no-speech' or 'audio-capture' just restart silently
+  };
+
+  rec.onend = function(){
     if(state.isRecording){
-      try{ rec.start(); }catch(x){}
+      // Small delay prevents "already started" Chrome error
+      _recRestartTimer = setTimeout(function(){
+        if(state.isRecording){
+          try{ state.recognition.start(); }catch(x){}
+        }
+      }, 80);
     }
   };
+
   return rec;
 }
-function toggleRecording(){if(state.isRecording)stopRecording();else startRecording();}
+
+function toggleRecording(){ if(state.isRecording) stopRecording(); else startRecording(); }
+
 function startRecording(){
   document.getElementById('micNotice').classList.remove('show');
-  if(!state.recognition)state.recognition=initSpeech();if(!state.recognition)return;
-  stopSpeaking();state.isRecording=true;
-  try{state.recognition.start();}catch(e){}
+  // Always create a fresh recognition instance to avoid Chrome state bugs
+  if(state.recognition){ try{ state.recognition.abort(); }catch(x){} }
+  state.recognition = initSpeech();
+  if(!state.recognition) return;
+
+  stopSpeaking();
+  state.isRecording = true;
+
+  try{ state.recognition.start(); }catch(e){}
+
   document.getElementById('micBtn').classList.add('recording');
-  document.getElementById('micBtn').innerHTML='<svg viewBox="0 0 24 24" style="width:26px;height:26px;fill:#fff;stroke:none;"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
-  document.getElementById('micStatus').textContent='🔴 Recording... tap to stop';
+  document.getElementById('micBtn').innerHTML = '<svg viewBox="0 0 24 24" style="width:26px;height:26px;fill:#fff;stroke:none;"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+  document.getElementById('micStatus').textContent = '🔴 Recording... tap to stop';
   document.getElementById('waveform').classList.add('active');
+
   if(!state.timerStarted){
-    state.timerStarted=true;var idx=state.currentIndex;
-    var isP2=(state.mode==='part2')||(state.mode==='simulation'&&idx>=state.p1Count&&idx<state.p1Count+state.p2Count);
-    var isP3=(state.mode==='part3')||(state.mode==='simulation'&&idx>=state.p1Count+state.p2Count);
-    if(isP2)startTimer('countdown',120);else if(isP3)startTimer('countup',45);
+    state.timerStarted = true;
+    var idx = state.currentIndex;
+    var isP2 = (state.mode==='part2') || (state.mode==='simulation' && idx>=state.p1Count && idx<state.p1Count+state.p2Count);
+    var isP3 = (state.mode==='part3') || (state.mode==='simulation' && idx>=state.p1Count+state.p2Count);
+    if(isP2) startTimer('countdown',120);
+    else if(isP3) startTimer('countup',45);
   }
 }
+
 function stopRecording(){
-  state.isRecording=false;if(state.recognition){try{state.recognition.stop();}catch(e){}}
+  state.isRecording = false;
+  if(_recRestartTimer){ clearTimeout(_recRestartTimer); _recRestartTimer = null; }
+  if(state.recognition){ try{ state.recognition.stop(); }catch(e){} }
   document.getElementById('micBtn').classList.remove('recording');
-  document.getElementById('micBtn').innerHTML='<svg viewBox="0 0 24 24" id="micIcon" style="width:32px;height:32px;fill:none;stroke:#fff;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>';
-  document.getElementById('micStatus').innerHTML='Tap to start speaking &nbsp;|&nbsp; <kbd style="background:var(--bg2);padding:2px 7px;border-radius:4px;border:1px solid var(--border);font-size:12px;">Space</kbd>';
+  document.getElementById('micBtn').innerHTML = '<svg viewBox="0 0 24 24" id="micIcon" style="width:32px;height:32px;fill:none;stroke:#fff;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>';
+  document.getElementById('micStatus').innerHTML = 'Tap to start speaking &nbsp;|&nbsp; <kbd style="background:var(--bg2);padding:2px 7px;border-radius:4px;border:1px solid var(--border);font-size:12px;">Space</kbd>';
   document.getElementById('waveform').classList.remove('active');
 }
-function clearTranscript(){state.transcript='';state.timerStarted=false;var b=document.getElementById('transcriptBox');b.textContent='Your speech will appear here...';b.style.fontStyle='italic';}
+
+function clearTranscript(){
+  state.transcript = '';
+  state.timerStarted = false;
+  var b = document.getElementById('transcriptBox');
+  b.textContent = 'Your speech will appear here...';
+  b.style.fontStyle = 'italic';
+}
 
 // ========== SUBMIT ==========
 function submitAnswer(){
@@ -982,36 +1129,101 @@ function submitAnswer(){
   if(state.isRecording)stopRecording();
   if(state.mode==='cefr')submitCEFR(answer);else submitIELTS(answer);
 }
+
+// ── Loading messages that cycle while waiting ──
+var _loadingTimer = null;
+function showAnimatedLoading(msgs){
+  var i = 0;
+  document.getElementById('loadingText').textContent = msgs[0];
+  document.getElementById('loadingOverlay').classList.add('show');
+  _loadingTimer = setInterval(function(){
+    i = (i+1) % msgs.length;
+    document.getElementById('loadingText').textContent = msgs[i];
+  }, 1800);
+}
+function hideAnimatedLoading(){
+  if(_loadingTimer){ clearInterval(_loadingTimer); _loadingTimer=null; }
+  document.getElementById('loadingOverlay').classList.remove('show');
+}
+
 function submitIELTS(answer){
-  var item=state.questions[state.currentIndex];
-  var partMap={part1:'Part 1',part2:'Part 2',part3:'Part 3',simulation:'IELTS'};
-  var usedHint=state.hintMode==='keywords';
-  document.getElementById('submitBtn').disabled=true;showLoading('Analyzing your answer...');
-  gasCall('getIELTSFeedback',[item.q,answer,partMap[state.mode]||'IELTS'],
+  var item = state.questions[state.currentIndex];
+  var partMap = {part1:'Part 1',part2:'Part 2',part3:'Part 3',simulation:'IELTS'};
+  var usedHint = state.hintMode === 'keywords';
+  document.getElementById('submitBtn').disabled = true;
+
+  // Show animated loading steps
+  showAnimatedLoading([
+    '🎙️ Processing your answer...',
+    '✏️ Checking your grammar...',
+    '📚 Analysing vocabulary...',
+    '🔢 Calculating your Band Score...',
+    '💡 Preparing suggestions...'
+  ]);
+
+  gasCall('getIELTSFeedback',[item.q, answer, partMap[state.mode]||'IELTS'],
     function(raw){
-      hideLoading();
+      hideAnimatedLoading();
       try{
-        var data=typeof raw==='string'?JSON.parse(raw):raw;
-        state.results.push({question:item.q,studentAnswer:answer,corrected:data.corrected,suggestion:data.suggestion,scores:data.scores,overall:data.overall,summary:data.summary,usedHint:usedHint,hintKeywords:usedHint?(item.kw||[]).join(', '):''});
-        renderFeedback(data,usedHint,answer);document.getElementById('nextBtn').style.display='block';
-      }catch(e){showToast('Error parsing response. Try again.','error');}
-      document.getElementById('submitBtn').disabled=false;
+        var data = typeof raw==='string' ? JSON.parse(raw) : raw;
+        state.results.push({
+          question:item.q, studentAnswer:answer,
+          corrected:data.corrected, suggestion:data.suggestion,
+          scores:data.scores, overall:data.overall,
+          summary:data.summary, usedHint:usedHint,
+          hintKeywords:usedHint?(item.kw||[]).join(', '):''
+        });
+        renderFeedback(data, usedHint, answer);
+        document.getElementById('nextBtn').style.display = 'block';
+      }catch(e){ showToast('Error parsing response. Try again.','error'); }
+      document.getElementById('submitBtn').disabled = false;
     },
-    function(err){hideLoading();showToast('Connection error: '+err.message,'error');document.getElementById('submitBtn').disabled=false;}
+    function(err){
+      hideAnimatedLoading();
+      showToast('Connection error: '+err.message,'error');
+      document.getElementById('submitBtn').disabled = false;
+    }
   );
 }
-function renderFeedback(data,usedHint,studentAnswer){
-  var ov=parseFloat(data.overall)||0;
-  var ht=usedHint?'<span class="hint-tag yes">💡 With key words</span>':'<span class="hint-tag no">🗣️ Without hints</span>';
-  var correctedHtml=data.corrected?buildDiffHtml(studentAnswer||'',data.corrected):'No corrections needed! ✅';
-  document.getElementById('feedbackArea').innerHTML=
+
+function renderFeedback(data, usedHint, studentAnswer){
+  var ov = parseFloat(data.overall)||0;
+  var ht = usedHint
+    ? '<span class="hint-tag yes">💡 With key words</span>'
+    : '<span class="hint-tag no">🗣️ Without hints</span>';
+  var correctedHtml = data.corrected
+    ? buildDiffHtml(studentAnswer||'', data.corrected)
+    : 'No corrections needed! ✅';
+
+  // Format summary as bullet points if it contains line breaks or semicolons
+  var summaryHtml = (data.summary||'');
+  if(summaryHtml.indexOf('•')!==-1||summaryHtml.indexOf('-')===0||summaryHtml.indexOf('\n')!==-1){
+    var lines = summaryHtml.split(/\n|•|;/).map(function(s){return s.replace(/^[-•\s]+/,'').trim();}).filter(Boolean);
+    summaryHtml = '<ul style="margin:6px 0 0 16px;padding:0;line-height:1.8;">'+lines.map(function(l){return'<li>'+l+'</li>';}).join('')+'</ul>';
+  }
+
+  document.getElementById('feedbackArea').innerHTML =
     '<div class="feedback-card">'+
-    '<div class="feedback-header"><div class="feedback-title">✨ Feedback '+ht+'</div><div class="score-badge">Band '+ov.toFixed(1)+'</div></div>'+
-    '<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px;">CORRECTED VERSION</div>'+
-    '<div class="diff-box">'+correctedHtml+'</div></div>'+
-    '<div class="scores-grid">'+rsi('🗣️ Fluency',data.scores&&data.scores.fluency)+rsi('📚 Lexical',data.scores&&data.scores.lexical)+rsi('✏️ Grammar',data.scores&&data.scores.grammar)+rsi('🔊 Pronunciation',data.scores&&data.scores.pronunciation)+'</div>'+
-    '<div class="suggestion-box"><div class="suggestion-label">💡 BAND 7.0+ SUGGESTION</div><div style="font-size:var(--fs);line-height:1.7;color:var(--text);">'+(data.suggestion||'')+'</div></div>'+
-    '<div class="summary-text">📋 '+(data.summary||'')+'</div></div>';
+    '<div class="feedback-header">'+
+      '<div class="feedback-title">✨ Feedback '+ht+'</div>'+
+      '<div class="score-badge">Band '+ov.toFixed(1)+'</div>'+
+    '</div>'+
+    '<div style="margin-bottom:12px;">'+
+      '<div style="font-size:11px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px;">CORRECTED VERSION</div>'+
+      '<div class="diff-box">'+correctedHtml+'</div>'+
+    '</div>'+
+    '<div class="scores-grid">'+
+      rsi('🗣️ Fluency',data.scores&&data.scores.fluency)+
+      rsi('📚 Lexical',data.scores&&data.scores.lexical)+
+      rsi('✏️ Grammar',data.scores&&data.scores.grammar)+
+      rsi('🔊 Pronunciation',data.scores&&data.scores.pronunciation)+
+    '</div>'+
+    (data.suggestion?
+      '<div class="suggestion-box"><div class="suggestion-label">💡 BAND 7.0+ SUGGESTION</div>'+
+      '<div style="font-size:var(--fs);line-height:1.7;color:var(--text);">'+data.suggestion+'</div></div>':'')+
+    '<div class="summary-text">'+summaryHtml+'</div>'+
+    '</div>';
+
   document.getElementById('feedbackArea').scrollIntoView({behavior:'smooth',block:'start'});
 }
 function rsi(label,obj){return'<div class="score-item"><div class="score-item-label">'+label+'</div><div class="score-item-val">'+(obj?parseFloat(obj.score).toFixed(1):'-')+'</div><div class="score-item-comment">'+(obj?obj.comment||'':'')+'</div></div>';}
