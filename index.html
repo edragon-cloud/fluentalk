@@ -46,6 +46,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 @keyframes ripple{0%{box-shadow:0 0 0 0 rgba(0,120,212,.45);}70%{box-shadow:0 0 0 22px rgba(0,120,212,0);}100%{box-shadow:0 0 0 0 rgba(0,120,212,0);}}
 @keyframes float{0%,100%{transform:translateY(0);}50%{transform:translateY(-5px);}}
 @keyframes dotBounce{0%,80%,100%{transform:scale(0);}40%{transform:scale(1);}}
+.think-dot{
+  width:7px;height:7px;border-radius:50%;
+  background:var(--blue);
+  animation:dotBounce 1.2s ease-in-out infinite;
+}
+.think-dot:nth-child(2){animation-delay:.2s;background:var(--teal);}
+.think-dot:nth-child(3){animation-delay:.4s;background:var(--purple);}
 @keyframes borderPulse{0%,100%{box-shadow:0 0 0 2px rgba(0,120,212,.35),var(--shadow);}50%{box-shadow:0 0 0 4px rgba(0,120,212,.15),var(--shadow);}}
 
 /* ── Layout ── */
@@ -558,15 +565,10 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 </div><!-- .app -->
 
 <script>
-var GAS_URL = 'https://script.google.com/macros/s/AKfycbwRpRA8az_x8AL3MmnaIgSjSyPgLLkY1UtnE6U2cVJuiDfHwnAS14DTdugX9utDH8Vz/exec';
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbyZCoZImQoFZnA9KAFlUVP5vgzPMsDqgztoLsf5yG5l39ZmjBBiIjLX8royhuNwyVrf/exec';
 
 // ========== GAS JSONP CALLER ==========
 function gasCall(funcName, params, onSuccess, onFailure) {
-  // saveToSheet dùng POST vì data lớn có thể vượt giới hạn URL
-  if (funcName === 'saveToSheet') {
-    gasCallPost(funcName, params, onSuccess, onFailure);
-    return;
-  }
   var url = GAS_URL + '?func=' + encodeURIComponent(funcName);
   if (params !== undefined && params !== null) url += '&params=' + encodeURIComponent(JSON.stringify(params));
   var cb = 'gasCallback_' + Date.now() + '_' + Math.floor(Math.random() * 9999);
@@ -577,55 +579,6 @@ function gasCall(funcName, params, onSuccess, onFailure) {
   window[cb] = function(result) { cleanup(); if (result && result.__error) { if (onFailure) onFailure({ message: result.__error }); } else { if (onSuccess) onSuccess(result); } };
   function cleanup() { clearTimeout(timer); delete window[cb]; if (script.parentNode) script.parentNode.removeChild(script); }
   script.onerror = function() { cleanup(); if (onFailure) onFailure({ message: 'Network error. Check GAS_URL.' }); };
-  document.head.appendChild(script);
-}
-
-// POST method cho data lớn (saveToSheet)
-function gasCallPost(funcName, params, onSuccess, onFailure) {
-  var url = GAS_URL;
-  var body = 'func=' + encodeURIComponent(funcName);
-  if (params !== undefined && params !== null) body += '&params=' + encodeURIComponent(JSON.stringify(params));
-  var cb = 'gasCallback_' + Date.now() + '_' + Math.floor(Math.random() * 9999);
-  body += '&callback=' + cb;
-  var timer = setTimeout(function() { if (onFailure) onFailure({ message: 'Save timeout.' }); }, 30000);
-  // GAS không hỗ trợ POST từ browser do CORS, dùng JSONP với GET nhưng chunk nhỏ hơn
-  // Gửi summary thay vì full results để tránh URL quá dài
-  var summary = {
-    studentName: params[0].studentName,
-    accessCode: params[0].accessCode,
-    mode: params[0].mode,
-    simMode: params[0].simMode,
-    startingTime: params[0].startingTime,
-    submittingTime: params[0].submittingTime,
-    duration: params[0].duration,
-    results: (params[0].results || []).map(function(r) {
-      return {
-        question: r.question,
-        studentAnswer: r.studentAnswer,
-        corrected: (r.corrected || '').replace(/<[^>]*>/g, '').substring(0, 500),
-        scores: r.scores,
-        overall: r.overall,
-        summary: (r.summary || '').substring(0, 300),
-        usedHint: r.usedHint
-      };
-    })
-  };
-  var cleanUrl = GAS_URL + '?func=' + encodeURIComponent(funcName) + '&params=' + encodeURIComponent(JSON.stringify([summary])) + '&callback=' + cb;
-  var script = document.createElement('script');
-  script.src = cleanUrl;
-  window[cb] = function(result) {
-    clearTimeout(timer);
-    delete window[cb];
-    if (script.parentNode) script.parentNode.removeChild(script);
-    if (result && result.__error) { if (onFailure) onFailure({ message: result.__error }); }
-    else { if (onSuccess) onSuccess(result); }
-  };
-  script.onerror = function() {
-    clearTimeout(timer);
-    delete window[cb];
-    if (script.parentNode) script.parentNode.removeChild(script);
-    if (onFailure) onFailure({ message: 'Save failed - network error.' });
-  };
   document.head.appendChild(script);
 }
 
@@ -781,10 +734,30 @@ function getSample(part,i) {
   syncQ(part,i); var item = setupData[part][i];
   if (!item||!item.q.trim()){showToast('Please enter a question first!','error');return;}
   var lens = {part1:'exactly 3 sentences',part2:'10 to 12 sentences',part3:'5 to 6 sentences'};
-  showLoading('Generating sample answer...');
+
+  // Show inline spinner on the button instead of full-screen overlay
+  var btn = document.querySelector('#rows_'+part+' .q-row:nth-child('+(i+1)+') .sample-btn');
+  if(btn){ btn.textContent='⏳ Generating...'; btn.disabled=true; }
+  var aEl = document.getElementById('a_'+part+'_'+i);
+  if(aEl){ aEl.placeholder='✍️ AI is writing your sample answer...'; aEl.style.borderColor='var(--blue)'; }
+
   gasCall('getSampleAnswer',[item.q.trim(),lens[part]||'3 sentences'],
-    function(txt){hideLoading();var aEl=document.getElementById('a_'+part+'_'+i);if(aEl){aEl.value=(txt||'').trim();setupData[part][i].a=(txt||'').trim();aEl.style.borderColor='var(--teal)';setTimeout(function(){aEl.style.borderColor='';},2000);}showToast('✅ Sample answer generated!','success');},
-    function(e){hideLoading();showToast('Error: '+e.message,'error');}
+    function(txt){
+      if(btn){ btn.textContent='✨ Generate'; btn.disabled=false; }
+      if(aEl){
+        aEl.value=(txt||'').trim();
+        setupData[part][i].a=(txt||'').trim();
+        aEl.placeholder='Optional: add your own answer or click ✨ Generate';
+        aEl.style.borderColor='var(--teal)';
+        setTimeout(function(){ aEl.style.borderColor=''; },2000);
+      }
+      showToast('✅ Sample answer generated!','success');
+    },
+    function(e){
+      if(btn){ btn.textContent='✨ Generate'; btn.disabled=false; }
+      if(aEl){ aEl.placeholder='Optional: add your own answer or click ✨ Generate'; aEl.style.borderColor=''; }
+      showToast('Error: '+e.message,'error');
+    }
   );
 }
 function getDefaults(mode) {
@@ -828,10 +801,11 @@ function startSession() {
 function shuffle(arr){for(var i=arr.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=arr[i];arr[i]=arr[j];arr[j]=t;}return arr;}
 function batchKeywordsAndStart(modeOverride){
   var qs=state.questions.map(function(q){return q.q;});
-  showLoading('Preparing keywords...');
+  // Show small non-blocking notice instead of full overlay
+  showToast('⏳ Preparing keywords...','');
   gasCall('generateAllKeywordsBatch',[qs,modeOverride||state.mode],
-    function(raw){hideLoading();try{var arr=typeof raw==='string'?JSON.parse(raw):raw;for(var i=0;i<arr.length;i++){if(state.questions[i])state.questions[i].kw=arr[i]||[];}}catch(e){for(var j=0;j<state.questions.length;j++)if(!state.questions[j].kw||!state.questions[j].kw.length)state.questions[j].kw='vocabulary, fluency, coherence, examples, grammar';}goToPage(2);initPage2();},
-    function(){hideLoading();for(var i=0;i<state.questions.length;i++)state.questions[i].kw='vocabulary, fluency, coherence, examples, grammar';goToPage(2);initPage2();}
+    function(raw){try{var arr=typeof raw==='string'?JSON.parse(raw):raw;for(var i=0;i<arr.length;i++){if(state.questions[i])state.questions[i].kw=arr[i]||[];}}catch(e){for(var j=0;j<state.questions.length;j++)if(!state.questions[j].kw||!state.questions[j].kw.length)state.questions[j].kw='vocabulary, fluency, coherence, examples, grammar';}goToPage(2);initPage2();},
+    function(){for(var i=0;i<state.questions.length;i++)state.questions[i].kw='vocabulary, fluency, coherence, examples, grammar';goToPage(2);initPage2();}
   );
 }
 
@@ -1130,20 +1104,33 @@ function submitAnswer(){
   if(state.mode==='cefr')submitCEFR(answer);else submitIELTS(answer);
 }
 
-// ── Loading messages that cycle while waiting ──
+// ── Inline thinking indicator (replaces full-screen overlay for feedback) ──
 var _loadingTimer = null;
-function showAnimatedLoading(msgs){
+
+function showAnimatedLoading(msgs) {
+  // Don't use full-screen overlay — show inline under the question instead
+  var area = document.getElementById('feedbackArea');
   var i = 0;
-  document.getElementById('loadingText').textContent = msgs[0];
-  document.getElementById('loadingOverlay').classList.add('show');
+  area.innerHTML =
+    '<div id="inlineThinking" style="display:flex;align-items:center;gap:10px;padding:14px 16px;background:#fff;border:1.5px solid var(--border);border-radius:12px;margin-top:4px;">' +
+      '<div style="display:flex;gap:5px;align-items:center;">' +
+        '<div class="think-dot"></div>' +
+        '<div class="think-dot"></div>' +
+        '<div class="think-dot"></div>' +
+      '</div>' +
+      '<div id="thinkingMsg" style="font-size:calc(var(--fs)-1px);color:var(--text2);font-weight:500;"></div>' +
+    '</div>';
+  document.getElementById('thinkingMsg').textContent = msgs[0];
   _loadingTimer = setInterval(function(){
-    i = (i+1) % msgs.length;
-    document.getElementById('loadingText').textContent = msgs[i];
+    i = (i + 1) % msgs.length;
+    var el = document.getElementById('thinkingMsg');
+    if(el) el.textContent = msgs[i];
   }, 1800);
 }
-function hideAnimatedLoading(){
-  if(_loadingTimer){ clearInterval(_loadingTimer); _loadingTimer=null; }
-  document.getElementById('loadingOverlay').classList.remove('show');
+
+function hideAnimatedLoading() {
+  if(_loadingTimer){ clearInterval(_loadingTimer); _loadingTimer = null; }
+  // feedbackArea will be overwritten by renderFeedback — no need to clear
 }
 
 function submitIELTS(answer){
@@ -1267,15 +1254,46 @@ function removeTyping(){var t=document.getElementById('typingBubble');if(t)t.rem
 function nextQuestion(){stopTimer();var n=state.currentIndex+1;if(n>=state.questions.length){endSession();return;}loadQ(n);}
 
 // ========== END SESSION ==========
-function confirmEnd(){if(confirm('End session and submit your results?'))endSession();}
+function confirmEnd(){ if(confirm('End session and submit your results?')) endSession(); }
+
 function endSession(){
-  if(state.sessionEnded)return;state.sessionEnded=true;
-  stopTimer();if(state.isRecording)stopRecording();
-  var endTime=new Date();var duration=Math.round((endTime-new Date(state.startingTime))/60000);
-  gasCall('saveToSheet',[{studentName:state.studentName,accessCode:state.accessCode,mode:state.mode,simMode:state.simMode,startingTime:formatDateTime(new Date(state.startingTime)),submittingTime:formatDateTime(endTime),duration:duration,results:state.results}],
-    function(res){if(!res||!res.success)console.log('Sheet save issue');},function(e){console.log('Sheet save failed:',e);}
+  if(state.sessionEnded) return;
+  state.sessionEnded = true;
+  stopTimer();
+  if(state.isRecording) stopRecording();
+
+  var endTime  = new Date();
+  var duration = Math.round((endTime - new Date(state.startingTime)) / 60000);
+
+  var payload = {
+    studentName:    state.studentName,
+    accessCode:     state.accessCode,
+    mode:           state.mode,
+    simMode:        state.simMode,
+    startingTime:   formatDateTime(new Date(state.startingTime)),
+    submittingTime: formatDateTime(endTime),
+    duration:       duration,
+    results:        state.results
+  };
+
+  // Step 1: store full data in GAS PropertiesService (no URL length limit)
+  gasCall('storeTempData', [payload],
+    function(res){
+      if(res && res.success && res.token){
+        // Step 2: trigger actual sheet write using just the token
+        gasCall('saveToSheet', [{ token: res.token }],
+          function(r){ if(!r || !r.success) console.warn('Sheet save issue:', r); },
+          function(e){ console.warn('Sheet save failed:', e); }
+        );
+      } else {
+        console.warn('storeTempData failed:', res);
+      }
+    },
+    function(e){ console.warn('storeTempData error:', e); }
   );
-  goToPage(3);buildReview();
+
+  goToPage(3);
+  buildReview();
 }
 
 // ========== REVIEW ==========
