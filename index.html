@@ -499,8 +499,14 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
         <button class="hint-opt" id="hintKw" onclick="setHint('keywords')">💡 Speak with key words</button>
       </div>
       <div class="keywords-box" id="keywordsBox">
-        <div class="keywords-label">💡 Key Words &amp; Ideas</div>
-        <div class="kw-chips" id="kwChips"></div>
+        <div class="keywords-label">💡 Your Key Words</div>
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
+          <input type="text" id="kwInput" class="form-input" placeholder="Type a keyword and press Enter or +" style="flex:1;padding:8px 12px;font-size:calc(var(--fs)-1px);" onkeydown="if(event.key==='Enter'){event.preventDefault();addKwChip();}">
+          <button onclick="addKwChip()" style="padding:8px 14px;border-radius:8px;border:none;background:var(--blue);color:#fff;font-weight:700;font-size:18px;cursor:pointer;line-height:1;">+</button>
+        </div>
+        <div class="kw-chips" id="kwChips">
+          <span style="color:var(--text3);font-size:13px;">Add words you want to use in your answer →</span>
+        </div>
       </div>
     </div>
     <div class="mic-notice" id="micNotice">
@@ -565,7 +571,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 </div><!-- .app -->
 
 <script>
-var GAS_URL = 'https://script.google.com/macros/s/AKfycbyZCoZImQoFZnA9KAFlUVP5vgzPMsDqgztoLsf5yG5l39ZmjBBiIjLX8royhuNwyVrf/exec';
+var GAS_URL = 'https://script.google.com/macros/s/AKfycby79aZCtIxI8xt0sHFu4xatP5xpmg-5pJB_fzpOVwwpI_WjvmYc8Wtx_MmaqHgXwTFq/exec';
 
 // ========== GAS JSONP CALLER ==========
 function gasCall(funcName, params, onSuccess, onFailure) {
@@ -800,13 +806,8 @@ function startSession() {
 }
 function shuffle(arr){for(var i=arr.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=arr[i];arr[i]=arr[j];arr[j]=t;}return arr;}
 function batchKeywordsAndStart(modeOverride){
-  var qs=state.questions.map(function(q){return q.q;});
-  // Show small non-blocking notice instead of full overlay
-  showToast('⏳ Preparing keywords...','');
-  gasCall('generateAllKeywordsBatch',[qs,modeOverride||state.mode],
-    function(raw){try{var arr=typeof raw==='string'?JSON.parse(raw):raw;for(var i=0;i<arr.length;i++){if(state.questions[i])state.questions[i].kw=arr[i]||[];}}catch(e){for(var j=0;j<state.questions.length;j++)if(!state.questions[j].kw||!state.questions[j].kw.length)state.questions[j].kw='vocabulary, fluency, coherence, examples, grammar';}goToPage(2);initPage2();},
-    function(){for(var i=0;i<state.questions.length;i++)state.questions[i].kw='vocabulary, fluency, coherence, examples, grammar';goToPage(2);initPage2();}
-  );
+  // Keywords are now user-defined — no AI call needed, start immediately
+  goToPage(2); initPage2();
 }
 
 // ========== PAGE 2 INIT ==========
@@ -906,74 +907,60 @@ function _doLoadQ(idx){
 }
 function updateProgress(c,t){var p=Math.round(c/t*100);document.getElementById('progressLabel').textContent='Question '+(c+1)+' of '+t;document.getElementById('progressPct').textContent=p+'%';document.getElementById('progressFill').style.width=p+'%';}
 function setHint(mode){
-  state.hintMode=mode;
-  document.getElementById('hintNone').classList.toggle('active',mode==='none');
-  document.getElementById('hintKw').classList.toggle('active',mode==='keywords');
-  var kb=document.getElementById('keywordsBox');
-  if(mode==='keywords'){kb.classList.add('show');renderKW();}else kb.classList.remove('show');
-}
-function renderKW(){
-  var item = state.questions[state.currentIndex];
-  var kw = item && item.kw ? item.kw : [];
-  var container = document.getElementById('kwChips');
-  var qText = (item && item.q) || '';
-  var isP2 = qText.indexOf('You should say') !== -1;
-
-  // Helper: render a list of keywords as chips with arrows between them
-  function chipsWithArrows(kwList, colorList){
-    var html = '';
-    kwList.forEach(function(k, i){
-      // Clean keyword: remove leading bullets, numbers, special chars
-      var clean = k.replace(/^[\d\.\-\*\▶\→\•\s]+/, '').trim();
-      if(!clean) return;
-      var c = colorList[i % colorList.length] || '';
-      html += '<span class="kw-chip '+c+'">'+clean+'</span>';
-      if(i < kwList.length - 1){
-        html += '<span class="kw-arrow">→</span>';
-      }
-    });
-    return html;
-  }
-
-  if(isP2 && Array.isArray(kw) && kw.length === 4 && typeof kw[0] === 'string'){
-    var bulletLabels = ['Point 1','Point 2','Point 3','And explain...'];
-    var groupColors  = [
-      ['','teal','blue','orange','green'],
-      ['teal','blue','orange','','teal'],
-      ['blue','orange','green','teal',''],
-      ['orange','green','','teal','blue']
-    ];
-    container.innerHTML = '';
-    kw.forEach(function(group, gi){
-      var kwList = typeof group==='string'
-        ? group.split(',').map(function(s){ return s.trim(); }).filter(Boolean)
-        : [];
-      if(!kwList.length) return;
-
-      var gDiv = document.createElement('div');
-      gDiv.style.cssText = 'margin-bottom:12px;width:100%;';
-
-      var lbl = document.createElement('div');
-      lbl.style.cssText = 'font-size:10px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;';
-      lbl.textContent = bulletLabels[gi];
-      gDiv.appendChild(lbl);
-
-      var cDiv = document.createElement('div');
-      cDiv.className = 'kw-chips';
-      cDiv.innerHTML = chipsWithArrows(kwList, groupColors[gi]);
-      gDiv.appendChild(cDiv);
-      container.appendChild(gDiv);
-    });
+  state.hintMode = mode;
+  document.getElementById('hintNone').classList.toggle('active', mode==='none');
+  document.getElementById('hintKw').classList.toggle('active', mode==='keywords');
+  var kb = document.getElementById('keywordsBox');
+  if(mode === 'keywords'){
+    kb.classList.add('show');
+    renderKwChips();
+    setTimeout(function(){ var inp=document.getElementById('kwInput'); if(inp)inp.focus(); }, 100);
   } else {
-    var kwList = typeof kw==='string'
-      ? kw.split(',').map(function(s){ return s.trim(); }).filter(Boolean)
-      : (Array.isArray(kw) ? kw : []);
-    var colors = ['','teal','blue','orange','green','teal','blue','orange','green','teal'];
-    container.innerHTML = kwList.length
-      ? chipsWithArrows(kwList, colors)
-      : '<span style="color:var(--text3);font-size:13px;">No keywords available.</span>';
+    kb.classList.remove('show');
   }
 }
+
+function addKwChip(){
+  var input = document.getElementById('kwInput');
+  var val = (input.value||'').trim();
+  if(!val) return;
+  var idx = state.currentIndex;
+  if(!state.questions[idx]) return;
+  if(!state.questions[idx].userKw) state.questions[idx].userKw = [];
+  if(!state.questions[idx].userKw.some(function(k){ return k.toLowerCase()===val.toLowerCase(); })){
+    state.questions[idx].userKw.push(val);
+  }
+  input.value = '';
+  input.focus();
+  renderKwChips();
+}
+
+function removeKwChip(word){
+  var idx = state.currentIndex;
+  if(!state.questions[idx]) return;
+  state.questions[idx].userKw = (state.questions[idx].userKw||[]).filter(function(k){ return k!==word; });
+  renderKwChips();
+}
+
+function renderKwChips(){
+  var container = document.getElementById('kwChips');
+  if(!container) return;
+  var idx = state.currentIndex;
+  var kws = (state.questions[idx] && state.questions[idx].userKw) || [];
+  if(!kws.length){
+    container.innerHTML = '<span style="color:var(--text3);font-size:13px;">Add words you want to use in your answer →</span>';
+    return;
+  }
+  var colors = ['','teal','blue','orange','green','teal','blue','orange'];
+  container.innerHTML = kws.map(function(k, i){
+    var safe = k.replace(/'/g,"\\'").replace(/"/g,'&quot;');
+    return '<span class="kw-chip '+(colors[i%colors.length]||'')+'" style="cursor:pointer;" onclick="removeKwChip(\''+safe+'\')" title="Click to remove">'
+      + k + ' <span style="opacity:.55;font-size:11px;margin-left:2px;">✕</span></span>'
+      + (i < kws.length-1 ? '<span class="kw-arrow">→</span>' : '');
+  }).join('');
+}
+
+function renderKW(){ renderKwChips(); }
 
 // ========== TIMER ==========
 function startTimer(type,seconds){
