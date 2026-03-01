@@ -495,17 +495,18 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
         </div>
       </div>
       <div class="hint-toggle" id="hintToggle">
-        <button class="hint-opt active" id="hintNone" onclick="setHint('none')">🗣️ Speak without hints</button>
-        <button class="hint-opt" id="hintKw" onclick="setHint('keywords')">💡 Speak with key words</button>
+        <button class="hint-opt active" id="hintNone" onclick="setHint('none')">🗣️ Answer without hints</button>
+        <button class="hint-opt" id="hintKw" onclick="setHint('keywords')">💡 Show my key words</button>
       </div>
       <div class="keywords-box" id="keywordsBox">
-        <div class="keywords-label">💡 Your Key Words</div>
-        <div style="display:flex;gap:8px;margin-bottom:10px;">
-          <input type="text" id="kwInput" class="form-input" placeholder="Type a keyword and press Enter or +" style="flex:1;padding:8px 12px;font-size:calc(var(--fs)-1px);" onkeydown="if(event.key==='Enter'){event.preventDefault();addKwChip();}">
-          <button onclick="addKwChip()" style="padding:8px 14px;border-radius:8px;border:none;background:var(--blue);color:#fff;font-weight:700;font-size:18px;cursor:pointer;line-height:1;">+</button>
-        </div>
-        <div class="kw-chips" id="kwChips">
-          <span style="color:var(--text3);font-size:13px;">Add words you want to use in your answer →</span>
+        <div class="keywords-label">💡 Key Words</div>
+        <div class="kw-chips" id="kwChips" style="margin-bottom:10px;min-height:28px;"></div>
+        <div style="display:flex;gap:7px;">
+          <input type="text" id="kwInput" class="form-input"
+            placeholder="Add more words..."
+            style="flex:1;padding:7px 11px;font-size:calc(var(--fs)-1px);"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();addKwChip();}">
+          <button onclick="addKwChip()" style="padding:7px 14px;border-radius:8px;border:none;background:var(--blue);color:#fff;font-size:18px;font-weight:700;cursor:pointer;line-height:1;flex-shrink:0;">+</button>
         </div>
       </div>
     </div>
@@ -571,7 +572,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 </div><!-- .app -->
 
 <script>
-var GAS_URL = 'https://script.google.com/macros/s/AKfycby79aZCtIxI8xt0sHFu4xatP5xpmg-5pJB_fzpOVwwpI_WjvmYc8Wtx_MmaqHgXwTFq/exec';
+var GAS_URL = 'https://script.google.com/macros/s/AKfycbwQ6Ue7QWPzLz9oAQPmR4ZG7ZuMagfwFFH6OUCw6foRw8JVaPzofwxtSqytAKlToGfx/exec';
 
 // ========== GAS JSONP CALLER ==========
 function gasCall(funcName, params, onSuccess, onFailure) {
@@ -729,9 +730,61 @@ function renderPartRows(part) {
   var container = document.getElementById('rows_'+part); if (!container) return; container.innerHTML = '';
   setupData[part].forEach(function(item, i) {
     var row = document.createElement('div'); row.className = 'q-row';
-    row.innerHTML = '<div class="q-input-wrap"><label>📌 Question '+(i+1)+'</label><textarea id="q_'+part+'_'+i+'" placeholder="Add your question here..." onchange="syncQ(\''+part+'\','+i+')">'+esc(item.q)+'</textarea></div><div class="a-input-wrap"><label><span class="a-label-text">✏️ Sample Answer <small style="font-size:10px;color:var(--text3);">('+lens[part]+')</small></span><button class="sample-btn" onclick="getSample(\''+part+'\','+i+')">✨ Generate</button></label><textarea id="a_'+part+'_'+i+'" placeholder="Optional: add your own answer or click ✨ Generate" onchange="syncA(\''+part+'\','+i+')">'+esc(item.a)+'</textarea></div>';
+    row.style.cssText = 'display:flex;flex-direction:column;gap:10px;';
+    var kwVal = (item.userKw||[]).join(', ');
+    row.innerHTML =
+      // Question
+      '<div class="q-input-wrap"><label>📌 Question '+(i+1)+'</label>'
+      +'<textarea id="q_'+part+'_'+i+'" placeholder="Add your question here..." onchange="syncQ(\''+part+'\','+i+')">'+esc(item.q)+'</textarea></div>'
+      // Sample Answer
+      +'<div class="a-input-wrap"><label><span class="a-label-text">✏️ Sample Answer <small style="font-size:10px;color:var(--text3);">('+lens[part]+')</small></span>'
+      +'<button class="sample-btn" onclick="getSample(\''+part+'\','+i+')">✨ Generate</button></label>'
+      +'<textarea id="a_'+part+'_'+i+'" placeholder="Optional: add your own answer or click ✨ Generate" onchange="syncA(\''+part+'\','+i+')">'+esc(item.a)+'</textarea></div>'
+      // Keywords
+      +'<div style="background:linear-gradient(135deg,#fffbe6,#fff5cc);border:1.5px solid #f0cc6a;border-radius:10px;padding:12px 14px;">'
+      +'<div style="font-size:11px;font-weight:700;color:var(--yellow2);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;">💡 Key Words <small style="font-weight:400;color:var(--text3);text-transform:none;letter-spacing:0;">(sinh viên tự thêm từ muốn dùng khi nói)</small></div>'
+      +'<div style="display:flex;gap:7px;margin-bottom:8px;">'
+      +'<input type="text" id="kwSetupInput_'+part+'_'+i+'" placeholder="Nhập từ khoá rồi nhấn Enter hoặc +" style="flex:1;padding:7px 11px;border:1.5px solid #f0cc6a;border-radius:7px;font-family:var(--font);font-size:calc(var(--fs)-1px);background:#fff;outline:none;" onkeydown="if(event.key===\'Enter\'){event.preventDefault();addSetupKw(\''+part+'\','+i+');}">'
+      +'<button onclick="addSetupKw(\''+part+'\','+i+')" style="padding:7px 13px;border-radius:7px;border:none;background:var(--yellow2);color:#fff;font-size:18px;font-weight:700;cursor:pointer;line-height:1;">+</button>'
+      +'</div>'
+      +'<div id="kwSetupChips_'+part+'_'+i+'" style="display:flex;flex-wrap:wrap;gap:6px;min-height:24px;">'
+      +(kwVal ? renderSetupChipsHtml(item.userKw||[], part, i) : '<span style="color:var(--text3);font-size:12px;">Chưa có từ nào — hãy thêm vào</span>')
+      +'</div>'
+      +'</div>';
     container.appendChild(row);
   });
+}
+
+function renderSetupChipsHtml(kws, part, i) {
+  if(!kws||!kws.length) return '<span style="color:var(--text3);font-size:12px;">Chưa có từ nào — hãy thêm vào</span>';
+  var colors = ['#0078d4','#008272','#5c2d91','#d83b01','#107c10'];
+  return kws.map(function(k, ci){
+    var safe = k.replace(/'/g,"\\'");
+    return '<span onclick="removeSetupKw(\''+part+'\','+i+',\''+safe+'\')" title="Click to remove" '
+      +'style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;background:'+colors[ci%colors.length]+';color:#fff;font-size:12px;font-weight:600;cursor:pointer;">'
+      +k+' <span style="opacity:.65;font-size:10px;">✕</span></span>'
+      +(ci < kws.length-1 ? '<span style="color:var(--text3);font-size:14px;font-weight:700;line-height:1;align-self:center;">→</span>' : '');
+  }).join('');
+}
+
+function addSetupKw(part, i) {
+  var input = document.getElementById('kwSetupInput_'+part+'_'+i);
+  var val = (input.value||'').trim();
+  if(!val) return;
+  if(!setupData[part][i].userKw) setupData[part][i].userKw = [];
+  if(!setupData[part][i].userKw.some(function(k){ return k.toLowerCase()===val.toLowerCase(); })){
+    setupData[part][i].userKw.push(val);
+  }
+  input.value = ''; input.focus();
+  var chips = document.getElementById('kwSetupChips_'+part+'_'+i);
+  if(chips) chips.innerHTML = renderSetupChipsHtml(setupData[part][i].userKw, part, i);
+}
+
+function removeSetupKw(part, i, word) {
+  if(!setupData[part][i]) return;
+  setupData[part][i].userKw = (setupData[part][i].userKw||[]).filter(function(k){ return k!==word; });
+  var chips = document.getElementById('kwSetupChips_'+part+'_'+i);
+  if(chips) chips.innerHTML = renderSetupChipsHtml(setupData[part][i].userKw, part, i);
 }
 function syncQ(part,i){var el=document.getElementById('q_'+part+'_'+i);if(el&&setupData[part][i])setupData[part][i].q=el.value;}
 function syncA(part,i){var el=document.getElementById('a_'+part+'_'+i);if(el&&setupData[part][i])setupData[part][i].a=el.value;}
@@ -779,7 +832,9 @@ function startSession() {
   if (state.mode==='part1'||state.mode==='part2'||state.mode==='part3'){
     setupData[state.mode].forEach(function(item,i){syncQ(state.mode,i);syncA(state.mode,i);});
     state.questions=setupData[state.mode].filter(function(d){return d.q.trim();});
-    if(!state.questions.length)state.questions=getDefaults(state.mode).map(function(q){return{q:q,a:'',kw:[]};});
+    // Carry userKw from setup into questions
+    state.questions.forEach(function(q){ q.userKw = q.userKw || []; });
+    if(!state.questions.length)state.questions=getDefaults(state.mode).map(function(q){return{q:q,a:'',userKw:[]};});
     batchKeywordsAndStart();return;
   }
   if (state.simMode==='forecast'){
@@ -798,6 +853,8 @@ function startSession() {
     var p1c=setupData.part1.filter(function(d){return d.q.trim();}).slice(0,10);
     var p2c=setupData.part2.filter(function(d){return d.q.trim();}).slice(0,1);
     var p3c=setupData.part3.filter(function(d){return d.q.trim();}).slice(0,6);
+    // Carry userKw from setup
+    [p1c,p2c,p3c].forEach(function(arr){ arr.forEach(function(q){ q.userKw = q.userKw||[]; }); });
     state.p1Count=p1c.length;state.p2Count=p2c.length;state.p3Count=p3c.length;state._prepDone=false;
     state.questions=p1c.concat(p2c).concat(p3c);
     if(!state.questions.length){showToast('Please add at least one question!','error');return;}
@@ -890,12 +947,17 @@ function loadQ(idx){
   _doLoadQ(idx);
 }
 function _doLoadQ(idx){
-  state.currentIndex=idx;var item=state.questions[idx];stopTimer();
+  state.currentIndex=idx; var item=state.questions[idx]; stopTimer();
   document.getElementById('questionNum').textContent='QUESTION '+(idx+1);
   document.getElementById('questionText').textContent=item.q;
   updateProgress(idx,state.questions.length);
-  document.getElementById('feedbackArea').innerHTML='';document.getElementById('nextBtn').style.display='none';
-  document.getElementById('timerDisplay').style.display='none';clearTranscript();setHint('none');
+  document.getElementById('feedbackArea').innerHTML=''; document.getElementById('nextBtn').style.display='none';
+  document.getElementById('timerDisplay').style.display='none'; clearTranscript();
+
+  // Auto-show keywords if this question has any, otherwise hide
+  var hasKw = ((item.userKw && item.userKw.length) || (item.runtimeKw && item.runtimeKw.length));
+  setHint(hasKw ? 'keywords' : 'none');
+
   if(state.mode==='simulation'){
     var lbl='';
     if(idx<state.p1Count)lbl='📝 Part 1 — Q'+(idx+1)+'/'+state.p1Count;
@@ -910,11 +972,12 @@ function setHint(mode){
   state.hintMode = mode;
   document.getElementById('hintNone').classList.toggle('active', mode==='none');
   document.getElementById('hintKw').classList.toggle('active', mode==='keywords');
+  document.getElementById('hintNone').textContent = mode==='none' ? '🙈 Hints hidden' : '🗣️ Answer without hints';
+  document.getElementById('hintKw').textContent   = mode==='keywords' ? '👁️ Key words shown' : '💡 Show my key words';
   var kb = document.getElementById('keywordsBox');
   if(mode === 'keywords'){
     kb.classList.add('show');
     renderKwChips();
-    setTimeout(function(){ var inp=document.getElementById('kwInput'); if(inp)inp.focus(); }, 100);
   } else {
     kb.classList.remove('show');
   }
@@ -926,19 +989,24 @@ function addKwChip(){
   if(!val) return;
   var idx = state.currentIndex;
   if(!state.questions[idx]) return;
-  if(!state.questions[idx].userKw) state.questions[idx].userKw = [];
-  if(!state.questions[idx].userKw.some(function(k){ return k.toLowerCase()===val.toLowerCase(); })){
-    state.questions[idx].userKw.push(val);
+  // Runtime keywords added during speaking (separate from setup keywords)
+  if(!state.questions[idx].runtimeKw) state.questions[idx].runtimeKw = [];
+  var all = (state.questions[idx].userKw||[]).concat(state.questions[idx].runtimeKw);
+  if(!all.some(function(k){ return k.toLowerCase()===val.toLowerCase(); })){
+    state.questions[idx].runtimeKw.push(val);
   }
-  input.value = '';
-  input.focus();
+  input.value = ''; input.focus();
   renderKwChips();
 }
 
-function removeKwChip(word){
+function removeKwChip(word, isRuntime){
   var idx = state.currentIndex;
   if(!state.questions[idx]) return;
-  state.questions[idx].userKw = (state.questions[idx].userKw||[]).filter(function(k){ return k!==word; });
+  if(isRuntime){
+    state.questions[idx].runtimeKw = (state.questions[idx].runtimeKw||[]).filter(function(k){ return k!==word; });
+  } else {
+    state.questions[idx].userKw = (state.questions[idx].userKw||[]).filter(function(k){ return k!==word; });
+  }
   renderKwChips();
 }
 
@@ -946,17 +1014,28 @@ function renderKwChips(){
   var container = document.getElementById('kwChips');
   if(!container) return;
   var idx = state.currentIndex;
-  var kws = (state.questions[idx] && state.questions[idx].userKw) || [];
-  if(!kws.length){
-    container.innerHTML = '<span style="color:var(--text3);font-size:13px;">Add words you want to use in your answer →</span>';
+  var q = state.questions[idx];
+  // Setup keywords (prepared before speaking) + runtime keywords (added during speaking)
+  var setupKws   = (q && q.userKw)    || [];
+  var runtimeKws = (q && q.runtimeKw) || [];
+  // Merge, no duplicates
+  var allKws = setupKws.slice();
+  runtimeKws.forEach(function(k){
+    if(!allKws.some(function(s){ return s.toLowerCase()===k.toLowerCase(); })) allKws.push(k);
+  });
+
+  if(!allKws.length){
+    container.innerHTML = '<span style="color:var(--text3);font-size:13px;">No keywords yet — type below to add</span>';
     return;
   }
   var colors = ['','teal','blue','orange','green','teal','blue','orange'];
-  container.innerHTML = kws.map(function(k, i){
-    var safe = k.replace(/'/g,"\\'").replace(/"/g,'&quot;');
-    return '<span class="kw-chip '+(colors[i%colors.length]||'')+'" style="cursor:pointer;" onclick="removeKwChip(\''+safe+'\')" title="Click to remove">'
-      + k + ' <span style="opacity:.55;font-size:11px;margin-left:2px;">✕</span></span>'
-      + (i < kws.length-1 ? '<span class="kw-arrow">→</span>' : '');
+  container.innerHTML = allKws.map(function(k, i){
+    var safe = k.replace(/'/g,"\\'");
+    var rt   = runtimeKws.indexOf(k) !== -1 && setupKws.indexOf(k) === -1;
+    return '<span class="kw-chip '+(colors[i%colors.length]||'')+'" style="cursor:pointer;" '
+      +'onclick="removeKwChip(\''+safe+'\','+(rt?'true':'false')+')" title="Click to remove">'
+      +k+' <span style="opacity:.55;font-size:11px;">✕</span></span>'
+      +(i < allKws.length-1 ? '<span class="kw-arrow">→</span>' : '');
   }).join('');
 }
 
@@ -1202,31 +1281,230 @@ function renderFeedback(data, usedHint, studentAnswer){
 }
 function rsi(label,obj){return'<div class="score-item"><div class="score-item-label">'+label+'</div><div class="score-item-val">'+(obj?parseFloat(obj.score).toFixed(1):'-')+'</div><div class="score-item-comment">'+(obj?obj.comment||'':'')+'</div></div>';}
 
+// ========== CEFR QUESTION POOL ==========
+// Shuffled fresh every session. Questions mapped to approximate CEFR levels.
+var CEFR_POOL = {
+  A1: [
+    "What's your name, please?",
+    "What town do you come from?",
+    "How many people are there in your family?",
+    "Do you have any brothers and sisters?",
+    "Do you have a pet?",
+    "What time do you often get up?",
+    "What time do you go to bed?",
+    "What is your favorite food?",
+    "Do you like sports?",
+    "What do you often eat for breakfast?",
+    "Do you watch TV every day?",
+    "What did you eat this morning?",
+    "Do you have your own room?",
+    "What is your favorite room in the house?",
+    "Who is your best friend?"
+  ],
+  A2: [
+    "What's the name of your school?",
+    "Do you like going to school?",
+    "What is your favorite subject?",
+    "How do you travel to school every day?",
+    "How long is your summer vacation?",
+    "What sort of music do you like?",
+    "Do you often listen to music in your free time?",
+    "Do you have a computer at home?",
+    "How often do you surf the Internet?",
+    "Are you interested in shopping?",
+    "What do you usually do at weekends?",
+    "What do you do in your spare time?",
+    "What did you do last weekend? Did you enjoy yourself?",
+    "What do you think of your hometown?",
+    "Do you like travelling? Why or why not?",
+    "Did you go away on holiday last year?",
+    "Do you play any sports?",
+    "Do you often watch sports on TV?",
+    "How often do you eat in a restaurant?",
+    "Do you always eat dinner with your family?",
+    "Why do you like your best friend?",
+    "Do you have a lot of friends?",
+    "How often do you hang out with friends?",
+    "Do you pay much attention to your health?",
+    "Do you do exercise every day?",
+    "What time do you get up in the morning?",
+    "Where do you come from?",
+    "What do you usually do at the weekends?",
+    "How often do you watch TV?",
+    "What subjects do you study at school?",
+    "What is your favourite meal of the day?",
+    "What food do you like?",
+    "Do you like shopping for clothes?",
+    "What is the weather like in your country?",
+    "What countries have you visited?"
+  ],
+  B1: [
+    "How much time do you spend doing your homework every day?",
+    "How often do you do housework?",
+    "What are you going to do next weekend?",
+    "Which country would you like to visit? Why?",
+    "Do you think playing sports is necessary?",
+    "What do you think is the most popular sport in the world?",
+    "What food do you think is unhealthy?",
+    "What qualities do you think are necessary for a true friend?",
+    "What should people do to keep fit?",
+    "Do you often stay up late?",
+    "Talk about your favorite travelling destination.",
+    "How many subjects do you have at school?",
+    "Do you have to take extra classes?",
+    "What do you often go shopping for?",
+    "Do you usually read books? What kind?",
+    "Have you travelled to another country?",
+    "Are you a member of any sports team?",
+    "What do you do to keep fit?",
+    "Is there any food that you really dislike? Why?",
+    "Why do you think friendship is necessary?",
+    "Are you in good health? What do you do for your health?",
+    "What type of TV programmes do you prefer watching?",
+    "Tell me something about your best friend.",
+    "What do you like about your school?",
+    "Is your diet healthy? Why or why not?",
+    "Tell me about the last time you went shopping.",
+    "Which subject do you like best? Why?",
+    "What's the most beautiful place in your town?"
+  ],
+  B2: [
+    "What do you think is the most dangerous sport? Why?",
+    "How has the Internet changed the way people communicate?",
+    "What are the advantages and disadvantages of social media?",
+    "Do you think technology helps or hurts students' learning?",
+    "How important is it to learn a foreign language today?",
+    "What would you change about your education system?",
+    "How do you think your hometown has changed over the years?",
+    "What do you think makes a healthy lifestyle?",
+    "How do you think people's eating habits have changed?",
+    "What role does sport play in modern society?",
+    "How important is family in your culture?",
+    "What do you think is the biggest challenge facing young people today?",
+    "If you could live in any country, where would you choose and why?",
+    "How has travel changed people's understanding of other cultures?",
+    "What do you think are the qualities of a good friend?",
+    "How do you balance school and free time?",
+    "What are your ambitions for the future?",
+    "How has your daily routine changed since you started school?",
+    "What advice would you give to someone learning English?",
+    "How do you think shopping habits have changed with the Internet?"
+  ]
+};
+
+// Per-session shuffled pool and used-question tracking
+var _cefrSessionPool = [];   // flat array of {q, level} shuffled for this session
+var _cefrPoolIndex   = 0;    // next question to ask
+
+function _initCEFRPool() {
+  _cefrSessionPool = [];
+  // Pick questions per level according to cefrLevels schedule (8 questions)
+  // We pre-build a shuffled pool of 30+ questions, then pick in order
+  var allLevels = ['A1','A2','B1','B2'];
+  allLevels.forEach(function(lv){
+    var qs = CEFR_POOL[lv].slice(); // copy
+    shuffle(qs);
+    qs.forEach(function(q){ _cefrSessionPool.push({q:q, level:lv}); });
+  });
+  // Final shuffle of entire pool so questions from different levels mix naturally
+  shuffle(_cefrSessionPool);
+  _cefrPoolIndex = 0;
+}
+
+function _nextCEFRQuestion(level) {
+  // Get next unused question from pool, preferring the target level
+  // First try to find one matching the level
+  for(var i = _cefrPoolIndex; i < _cefrSessionPool.length; i++){
+    if(_cefrSessionPool[i].level === level){
+      var q = _cefrSessionPool[i].q;
+      // Remove from pool by swapping with current index
+      var tmp = _cefrSessionPool[_cefrPoolIndex];
+      _cefrSessionPool[_cefrPoolIndex] = _cefrSessionPool[i];
+      _cefrSessionPool[i] = tmp;
+      _cefrPoolIndex++;
+      return q;
+    }
+  }
+  // Fallback: just take the next available question
+  if(_cefrPoolIndex < _cefrSessionPool.length){
+    return _cefrSessionPool[_cefrPoolIndex++].q;
+  }
+  return null;
+}
+
 // ========== CEFR ==========
 function startCEFR(){
   document.getElementById('chatContainer').innerHTML='';
-  addBubble('examiner',"Hello! Welcome to your CEFR speaking test. I'll be your examiner today. Ready?",'A1');addTyping();
-  gasCall('generateCEFRQuestion',[[],  'A1'],function(q){removeTyping();var question=(q||'').trim();addBubble('examiner',question,state.cefrLevel);state.cefrHistory.push({q:question,a:null});},function(){removeTyping();var q="Let's start. Can you tell me your name?";addBubble('examiner',q,'A1');state.cefrHistory.push({q:q,a:null});});
+  _initCEFRPool(); // fresh shuffle every session
+  addBubble('examiner',"Hello! Welcome to your CEFR speaking test. I'll ask you some questions. Just speak naturally — there are no wrong answers! Ready?",'A1');
+  setTimeout(function(){
+    var q = _nextCEFRQuestion('A1');
+    if(q){
+      addBubble('examiner', q, 'A1');
+      state.cefrHistory.push({q:q, a:null});
+    }
+  }, 800);
 }
+
 function submitCEFR(answer){
-  if(!state.cefrHistory.length)return;
-  var last=state.cefrHistory[state.cefrHistory.length-1];var question=last.q;last.a=answer;
-  addBubble('student',answer);document.getElementById('submitBtn').disabled=true;addTyping();
-  gasCall('getCEFRFeedback',[question,answer,state.cefrLevel],
+  if(!state.cefrHistory.length) return;
+  var last = state.cefrHistory[state.cefrHistory.length-1];
+  var question = last.q; last.a = answer;
+  addBubble('student', answer);
+  document.getElementById('submitBtn').disabled = true;
+  addTyping();
+
+  gasCall('getCEFRFeedback',[question, answer, state.cefrLevel],
     function(raw){
       removeTyping();
       try{
-        var data=typeof raw==='string'?JSON.parse(raw):raw;var capped=Math.min(parseFloat(data.overall)||0,6.5);
-        state.results.push({question:question,studentAnswer:answer,corrected:data.corrected,suggestion:data.suggestion,scores:data.scores,overall:capped,summary:data.summary,usedHint:false,hintKeywords:''});
-        var fb='<div style="font-size:12px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);"><b style="color:var(--teal)">Band: '+capped.toFixed(1)+'</b> | '+(data.summary||'')+(data.corrected?'<br><br><b>Correction:</b> '+data.corrected:'')+'</div>';
-        addBubble('examiner','Thank you.'+fb,state.cefrLevel);
-        var asked=state.results.length;if(asked<cefrLevels.length)state.cefrLevel=cefrLevels[asked];
-        document.getElementById('submitBtn').disabled=false;clearTranscript();
-        if(asked<8){addTyping();var hist=state.cefrHistory.filter(function(h){return h.a;}).slice(0,-1);gasCall('generateCEFRQuestion',[hist,state.cefrLevel],function(q){removeTyping();var q2=(q||'').trim();addBubble('examiner',q2,state.cefrLevel);state.cefrHistory.push({q:q2,a:null});},function(){removeTyping();addBubble('examiner',"Could you tell me more about that?",state.cefrLevel);state.cefrHistory.push({q:"Could you tell me more about that?",a:null});});}
-        else{addBubble('examiner',"That concludes your speaking test. Well done! Click 'End Session' to see your results.",state.cefrLevel);}
-      }catch(e){showToast('Error parsing feedback.','error');document.getElementById('submitBtn').disabled=false;}
+        var data = typeof raw==='string' ? JSON.parse(raw) : raw;
+        var capped = Math.min(parseFloat(data.overall)||0, 6.5);
+        state.results.push({
+          question:question, studentAnswer:answer,
+          corrected:data.corrected, suggestion:data.suggestion,
+          scores:data.scores, overall:capped,
+          summary:data.summary, usedHint:false, hintKeywords:''
+        });
+
+        // Show brief inline feedback in chat
+        var corrNote = data.corrected && data.corrected.trim() !== answer.trim()
+          ? '<br><span style="color:var(--teal);font-size:12px;">✏️ <i>' + data.corrected + '</i></span>' : '';
+        var fb = '<div style="font-size:12px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">'
+          + '<b style="color:var(--blue)">Band: '+capped.toFixed(1)+'</b>'
+          + (data.summary ? ' · '+data.summary : '')
+          + corrNote
+          + '</div>';
+        addBubble('examiner', 'Thank you!' + fb, state.cefrLevel);
+
+        var asked = state.results.length;
+        if(asked < cefrLevels.length) state.cefrLevel = cefrLevels[asked];
+        document.getElementById('submitBtn').disabled = false;
+        clearTranscript();
+
+        if(asked < 8){
+          setTimeout(function(){
+            var nextQ = _nextCEFRQuestion(state.cefrLevel);
+            if(nextQ){
+              addBubble('examiner', nextQ, state.cefrLevel);
+              state.cefrHistory.push({q:nextQ, a:null});
+            } else {
+              addBubble('examiner',"That's all my questions. Well done! Click 'End Session' to see your results.", state.cefrLevel);
+            }
+          }, 600);
+        } else {
+          addBubble('examiner',"That concludes your speaking test. Well done! Click 'End Session' to see your results.", state.cefrLevel);
+        }
+      }catch(e){
+        showToast('Error parsing feedback.','error');
+        document.getElementById('submitBtn').disabled = false;
+      }
     },
-    function(err){removeTyping();showToast('Error: '+err.message,'error');document.getElementById('submitBtn').disabled=false;}
+    function(err){
+      removeTyping();
+      showToast('Error: '+err.message,'error');
+      document.getElementById('submitBtn').disabled = false;
+    }
   );
 }
 function addBubble(type,text,level){
